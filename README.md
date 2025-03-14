@@ -1,101 +1,115 @@
-# Rust Atomics with Loom Testing
+# Loom Test kit
 
-This repository contains code for testing concurrent Rust code using [Loom](https://github.com/tokio-rs/loom), a model checker for concurrent Rust code.
-
-## Project Structure
-
-- **sync.rs module**: Abstracts synchronization primitives to use either standard library (`std::sync`, `std::thread`) in normal builds or Loom's primitives (`loom::sync`, `loom::thread`) during testing.
-
-- **loom config flag**: Enables conditional compilation:
-  ```rust
-  #[cfg(loom)]     // Used with Loom testing
-  #[cfg(not(loom))] // Used in normal builds
-  ```
-  When running Loom tests, we set `--cfg loom` via `RUSTFLAGS` to activate Loom's implementation.
-
-## The `concurrent_test` Macro
-
-The project includes a `concurrent_test` macro that simplifies writing tests that work both with and without Loom.
-
-This macro allows you to:
-- Write a single test that works in both normal and Loom testing modes
-- Automatically wrap the test code in `loom::model` when Loom is enabled
-- Execute the same code directly when running normal tests
-
-Example usage:
-
-```rust
-#[test]
-fn test_concurrent_logic() {
-    concurrent_test!({
-        let v1 = Arc::new(AtomicUsize::new(0));
-        let v2 = v1.clone();
-
-        thread::spawn(move || {
-            v1.store(1, SeqCst);
-        });
-        assert_eq!(0, v2.load(SeqCst));
-    });
-}
-```
-
-With this approach, you write your test once, and it behaves differently depending on whether you're running normal tests or Loom tests.
+A practical demonstration of testing concurrent Rust code using [Loom](https://github.com/tokio-rs/loom), a model checker that systematically explores thread interleavings to find concurrency bugs.
 
 ## Why Use Loom?
 
-Concurrent code testing is fundamentally challenging:
+Traditional testing approaches can't reliably detect concurrency bugs because:
+- Bugs may appear in only a tiny fraction of possible thread interleavings
+- Some issues won't appear even after millions of random test runs
+- Problems with memory ordering may only manifest on specific hardware
 
-- Bugs may occur in only a tiny fraction of possible thread interleavings
-- Some issues won't appear even after millions of test runs
-- Problems with relaxed memory ordering may only manifest on specific hardware
+Loom provides systematic exploration rather than random testing, making it much more effective for concurrent code.
 
-Loom addresses these challenges by:
+## Workflow: Finding Concurrency Bugs with Loom
 
-- Deterministically exploring all valid execution permutations
-- Simulating Rust's memory model and the OS scheduler
-- Verifying correctness across all possible executions, not just "most of the time"
+Follow these steps to find and diagnose concurrency bugs:
 
-Traditional approaches (running tests in loops or under system load) are unreliable for finding these issues:
+1. **Run standard tests** - They'll likely pass despite having bugs:
+   ```bash
+   ./run_normal_tests.sh
+   ```
 
-```bash
-./run_normal_tests.sh  # Tests pass in normal mode
-./run_loom.sh          # Tests fail under Loom's model checker
-```
-
-## Testing Scripts
-
-### Normal Testing
-```bash
-./run_normal_tests.sh
-```
-
-### Loom Testing
-1. **Run all Loom tests**:
+2. **Run with Loom** - This will find concurrency issues:
    ```bash
    ./run_loom.sh
    ```
 
-2. **Checkpoint a failing test**:
+3. **Create a checkpoint** for the failing test:
    ```bash
-   ./checkpoint_loom.sh test_name
+   ./checkpoint_loom.sh test_concurrent_logic
    ```
-   Creates a checkpoint at `loom_test_artifacts/test_name.json`
 
-3. **Trace a failing test**:
+4. **Get a detailed trace** to diagnose the issue:
    ```bash
-   ./trace_loom.sh test_name
+   ./trace_loom.sh test_concurrent_logic
    ```
-   Provides detailed trace logs to diagnose the failure.
 
-## Workflow Example
+5. **Examine the trace output** to understand the specific thread interleaving that caused the failure.
+
+## Testing Scripts Explained
+
+### 1. `run_normal_tests.sh`
+
+Runs tests normally without Loom, using standard Rust threading:
+
 ```bash
-# Run normal and Loom tests
-./run_normal_tests.sh
-./run_loom.sh
-
-# If "concurrent_bug" fails, create checkpoint and trace
-./checkpoint_loom.sh concurrent_bug
-./trace_loom.sh concurrent_bug
+cargo test --release
 ```
 
-Trace information and checkpoint files are stored in the `loom_test_artifacts` directory.
+Most concurrency bugs won't be detected in this mode, as they only occur in specific thread interleavings.
+
+### 2. `run_loom.sh`
+
+Runs all tests with Loom enabled:
+
+```bash
+RUSTFLAGS="--cfg loom" cargo test --release
+```
+
+This activates Loom's model checking, which systematically explores thread interleavings to find bugs.
+
+### 3. `checkpoint_loom.sh <test_name>`
+
+Creates a checkpoint file for a failing test:
+
+```bash
+RUSTFLAGS="--cfg loom" \
+LOOM_CHECKPOINT_INTERVAL=1 \
+LOOM_CHECKPOINT_FILE="loom_test_artifacts/${TEST_NAME}.json" \
+cargo test --release "$TEST_NAME"
+```
+
+Checkpoints are saved to `loom_test_artifacts/` and help pinpoint where a failure occurs.
+
+### 4. `trace_loom.sh <test_name>`
+
+Provides detailed trace logs for a failing test:
+
+```bash
+RUSTFLAGS="--cfg loom" \
+LOOM_LOG=trace \
+LOOM_LOCATION=1 \
+LOOM_CHECKPOINT_INTERVAL=1 \
+LOOM_CHECKPOINT_FILE="loom_test_artifacts/${TEST_NAME}.json" \
+cargo test --release "$TEST_NAME"
+```
+
+Traces show the exact execution path that led to the failure, including thread scheduling decisions.
+
+## Project Structure
+
+### `concurrent_test` Macro
+
+For writing tests that work in both normal and Loom modes:
+
+```rust
+#[test]
+fn my_test() {
+    concurrent_test!({
+        // Test code here
+        // Will run directly in normal mode
+        // Will run inside loom::model in Loom mode
+    })
+}
+```
+
+### Configuration Setup
+
+- **sync.rs module**: Abstracts synchronization primitives between std and Loom
+- **loom config flag**: Enables conditional compilation with `#[cfg(loom)]`
+- **Cargo.toml**: Includes Loom as a conditional dependency:
+  ```toml
+  [target.'cfg(loom)'.dependencies]
+  loom = { version = "0.7", features = ["checkpoint"] }
+  ```
