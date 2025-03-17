@@ -37,6 +37,11 @@ Follow these steps to find and diagnose concurrency bugs:
 
 5. **Examine the trace output** to understand the specific thread interleaving that caused the failure.
 
+6. **Clear artifacts** after you're done analyzing:
+   ```bash
+   ./clear_loom_artifacts.sh
+   ```
+
 ## Testing Scripts Explained
 
 ### 1. `run_normal_tests.sh`
@@ -86,6 +91,16 @@ cargo test --release "$TEST_NAME"
 ```
 
 Traces show the exact execution path that led to the failure, including thread scheduling decisions.
+
+### 5. `clear_loom_artifacts.sh`
+
+Cleans up Loom test artifacts:
+
+```bash
+./clear_loom_artifacts.sh
+```
+
+Removes all files in the `loom_test_artifacts/` directory or creates the directory if it doesn't exist.
 
 ## Project Structure
 
