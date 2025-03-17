@@ -1,4 +1,4 @@
-# Loom Test kit
+# Loom Test Kit
 
 A practical demonstration of testing concurrent Rust code using [Loom](https://github.com/tokio-rs/loom), a model checker that systematically explores thread interleavings to find concurrency bugs.
 
