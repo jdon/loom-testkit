@@ -1,3 +1,4 @@
+use rust_atomics::locks::SpinLock;
 use rust_atomics::{concurrent_test, sync};
 use sync::Arc;
 use sync::atomic::Ordering::{Acquire, Relaxed, Release, SeqCst};
@@ -58,5 +59,24 @@ fn release_and_acquire_incorrect() {
             spin_loop();
         }
         assert_eq!(42, data.load(Relaxed));
+    });
+}
+
+#[test]
+fn spin_lock() {
+    concurrent_test!({
+        let x = SpinLock::new(Vec::new());
+
+        thread::scope(|s| {
+            s.spawn(|| x.lock().push(1));
+            s.spawn(|| {
+                let mut g = x.lock();
+                g.push(2);
+                g.push(2);
+            });
+        });
+
+        let g = x.lock();
+        assert!(g.as_slice() == [1, 2, 2] || g.as_slice() == [2, 2, 1])
     });
 }
