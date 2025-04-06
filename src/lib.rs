@@ -1,5 +1,5 @@
-pub mod sync;
 pub mod locks;
+pub mod sync;
 
 #[macro_export]
 macro_rules! concurrent_test {
