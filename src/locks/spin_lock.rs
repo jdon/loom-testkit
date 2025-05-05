@@ -1,9 +1,9 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::sync::UnsafeCell;
 use crate::sync::atomic::AtomicBool;
 use crate::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use crate::sync::spin_loop;
+use crate::sync::{DerefExt, UnsafeCell};
 
 pub struct SpinLock<T> {
     lock: AtomicBool,
@@ -40,31 +40,13 @@ pub struct Guard<'a, T> {
 impl<T> Deref for Guard<'_, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            #[cfg(loom)]
-            {
-                self.inner.inner.get().with(|ptr| &*ptr)
-            }
-            #[cfg(not(loom))]
-            {
-                &*self.inner.inner.get()
-            }
-        }
+        unsafe { self.inner.inner.get_ext() }
     }
 }
 
 impl<T> DerefMut for Guard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            #[cfg(loom)]
-            {
-                self.inner.inner.get_mut().with(|ptr| &mut *ptr)
-            }
-            #[cfg(not(loom))]
-            {
-                &mut *self.inner.inner.get()
-            }
-        }
+        unsafe { self.inner.inner.get_mut_ext() }
     }
 }
 

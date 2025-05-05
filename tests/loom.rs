@@ -1,3 +1,4 @@
+use rust_atomics::channels::safe::SafeChannel;
 use rust_atomics::locks::SpinLock;
 use rust_atomics::{concurrent_test, sync};
 use sync::Arc;
@@ -143,4 +144,63 @@ fn spin_lock() {
         writer.join().unwrap();
         reader.join().unwrap();
     });
+}
+
+#[test]
+fn safe_channel() {
+    concurrent_test!({
+        let channel = Arc::new(SafeChannel::<usize>::new());
+        let c1 = channel.clone();
+        let c2 = channel.clone();
+
+        let t1 = thread::spawn(move || {
+            c1.send(10);
+        });
+
+        let t2 = thread::spawn(move || {
+            c2.send(20);
+        });
+
+        // Wait for sends to complete
+        t1.join().unwrap();
+        t2.join().unwrap();
+
+        // Receive both messages (order may vary)
+        let msg1 = channel.receive();
+        let msg2 = channel.receive();
+
+        // Since threads can run in any order, either combination is valid
+        assert!(
+            (msg1 == 10 && msg2 == 20) || (msg1 == 20 && msg2 == 10),
+            "Received incorrect messages: {} and {}",
+            msg1,
+            msg2
+        );
+    });
+}
+
+#[test]
+#[cfg(not(loom))]
+fn test_oneshot_basic() {
+    // Create a new channel
+
+    use rust_atomics::channels::unsafe_one_shot::UnsafeOneShotChannel;
+    let channel = UnsafeOneShotChannel::<String>::new();
+
+    // Initially, the channel should not be ready
+    assert!(!channel.is_ready());
+
+    // Send a message
+    unsafe {
+        channel.send("Hello, world!".to_string());
+    }
+
+    // Now the channel should be ready
+    assert!(channel.is_ready());
+
+    // Receive the message
+    unsafe {
+        let message = channel.receive();
+        assert_eq!(message, "Hello, world!");
+    }
 }
